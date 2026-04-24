@@ -32,6 +32,14 @@ export const useFinanceStore = create(
           transactions: [{ ...tx, id: genId() }, ...s.transactions],
         })),
 
+      addTransactionsBulk: (items) =>
+        set((s) => ({
+          transactions: [
+            ...items.map((tx) => ({ ...tx, id: genId() })),
+            ...s.transactions,
+          ],
+        })),
+
       updateTransaction: (id, updates) =>
         set((s) => ({
           transactions: s.transactions.map((t) =>

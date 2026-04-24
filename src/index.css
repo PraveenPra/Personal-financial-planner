@@ -486,6 +486,12 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
 
 .animate-in { animation: slideUp 0.3s ease both; }
 .animate-fade { animation: fadeIn 0.3s ease both; }
+.spin { animation: spin 0.9s linear infinite; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 /* ─── Misc Utilities ──────────────────────────────── */
 .text-green { color: var(--green); }

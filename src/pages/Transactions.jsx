@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pencil, Trash2, Search, Filter } from 'lucide-react';
+import { Pencil, Trash2, Search, Upload } from 'lucide-react';
 import { useFinanceStore } from '../store/useFinanceStore';
 import { useUIStore } from '../store/useUIStore';
 import { getCategoryById, CATEGORIES } from '../utils/categories';
@@ -36,20 +36,29 @@ export default function Transactions() {
   return (
     <div className="page-container animate-in">
       {/* Header */}
-      <div className="flex-between" style={{ marginBottom: 24 }}>
+      <div className="flex-between" style={{ marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h1 className="page-title">Transactions</h1>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 4 }}>
             {filtered.length} transaction{filtered.length !== 1 ? 's' : ''} found
           </p>
         </div>
-        <button
-          id="add-tx-page-btn"
-          className="btn btn-primary"
-          onClick={() => openModal('addTransaction')}
-        >
-          + Add Transaction
-        </button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => openModal('importStatement')}
+          >
+            <Upload size={16} />
+            Import PDF
+          </button>
+          <button
+            id="add-tx-page-btn"
+            className="btn btn-primary"
+            onClick={() => openModal('addTransaction')}
+          >
+            + Add Transaction
+          </button>
+        </div>
       </div>
 
       {/* Summary bar */}

@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 import TransactionModal from './components/modals/TransactionModal';
+import StatementImportModal from './components/modals/StatementImportModal';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
 import Budgets from './pages/Budgets';
@@ -30,6 +31,7 @@ export default function App() {
 
       {/* Global modals */}
       <TransactionModal />
+      <StatementImportModal />
     </div>
   );
 }
