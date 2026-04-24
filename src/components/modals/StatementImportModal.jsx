@@ -165,6 +165,15 @@ export default function StatementImportModal() {
 
         {rows.length > 0 && (
           <>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={handleClose}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-primary" style={{ flex: 2 }} onClick={handleImport}>
+                Import Selected Transactions
+              </button>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               <div className="glass-card" style={{ padding: 16 }}>
                 <div className="text-xs text-muted">Ready To Import</div>
@@ -261,14 +270,6 @@ export default function StatementImportModal() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={handleClose}>
-                Cancel
-              </button>
-              <button type="button" className="btn btn-primary" style={{ flex: 2 }} onClick={handleImport}>
-                Import Selected Transactions
-              </button>
-            </div>
           </>
         )}
       </div>
