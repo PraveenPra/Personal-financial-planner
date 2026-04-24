@@ -6,6 +6,7 @@ FinFlow is a feature-rich, visually premium personal finance management web appl
 
 - **Dashboard**: High-level overview of net balance, monthly income/expenses, savings rate, and recent transactions.
 - **Transactions Management**: Add, edit, delete, search, and filter transactions by date, type, and category.
+- **PDF Statement Import**: Upload PhonePe and similar UPI statement PDFs, preview parsed rows, review inferred categories, and import many transactions at once.
 - **Budgets**: Set monthly limits per category and track your spending against them with progress bars.
 - **Savings Goals**: Create visual goals with target amounts, icons, and deadlines. Add contributions and track progress.
 - **Advanced Analytics**: Interactive charts using ApexCharts including:
@@ -24,6 +25,7 @@ FinFlow is a feature-rich, visually premium personal finance management web appl
 - **Routing**: React Router v6
 - **Charts**: ApexCharts (`react-apexcharts`)
 - **Icons**: Lucide React
+- **PDF Parsing**: `pdfjs-dist`
 - **Styling**: Vanilla CSS with custom properties and a utility-first approach
 - **Fonts**: Google Fonts (Inter)
 
@@ -78,6 +80,28 @@ npm run build
 ```
 
 This will generate an optimized build in the `dist` folder.
+
+## Statement Import
+
+FinFlow can import transactions from a PDF statement so you do not need to enter every expense manually.
+
+### Supported flow
+
+1. Open the `Transactions` page.
+2. Click `Import PDF`.
+3. Upload a PhonePe or similar UPI statement PDF with selectable text.
+4. Review the parsed rows, adjust categories if needed, then click `Import Selected Transactions`.
+
+### What gets inferred automatically
+
+- Merchant text such as `BMTC BUS...` is mapped to travel-related spending.
+- Food-style merchants like cafes, restaurants, and grocery apps are mapped to `Food & Dining`.
+- The importer also flags likely duplicates by comparing date, type, amount, and note against existing transactions.
+
+### Current limitations
+
+- Best results come from digital PDFs that contain selectable text.
+- Category inference is keyword-based, so uncommon merchant names may still need a quick manual correction before import.
 
 ## 🎨 Design System
 
