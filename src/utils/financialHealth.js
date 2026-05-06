@@ -47,6 +47,12 @@ const currency = (amount) =>
     maximumFractionDigits: 0,
   }).format(Math.max(0, Math.round(Number(amount) || 0)));
 
+const signedCurrency = (amount) => {
+  const value = Number(amount) || 0;
+  const formatted = currency(Math.abs(value));
+  return value < 0 ? `-${formatted}` : formatted;
+};
+
 const factor = ({ id, label, score, status, detail, metric, action }) => ({
   id,
   label,
@@ -402,3 +408,172 @@ export const getFinancialHealthSummary = (state = {}) => {
   };
 };
 
+export const getFinancialNarrative = (summary = {}) => {
+  const priorities = Array.isArray(summary.priorities) ? summary.priorities : [];
+  const nextActions = Array.isArray(summary.nextActions) ? summary.nextActions : [];
+  const criticalItems = priorities.filter((item) => item.status === 'critical');
+  const warningItems = priorities.filter((item) => item.status === 'attention');
+  const protectionWeak = Boolean(summary.metrics?.protectionWeak);
+  const stageName = summary.stage?.name || 'your current stage';
+  const topAction = nextActions[0]?.description || 'Keep tracking your money and review your plan regularly.';
+
+  if (criticalItems.length > 0) {
+    const missing = criticalItems.slice(0, 2).map((item) => item.label.toLowerCase()).join(' and ');
+    return {
+      headline: "You're missing some financial basics",
+      summary: `You are in Stage ${summary.stage?.id ?? 0}: ${stageName}, and ${missing || 'a few essentials'} need attention first.`,
+      insight: protectionWeak
+        ? 'Before thinking about investing, focus on your safety buffer and insurance gaps.'
+        : topAction,
+      tone: 'critical',
+    };
+  }
+
+  if (warningItems.length > 0) {
+    const firstWarning = warningItems[0]?.label.toLowerCase() || 'one area';
+    return {
+      headline: "You're on the right track, but not fully stable yet",
+      summary: `Your basics are not in danger, but ${firstWarning} still needs work before the plan feels steady.`,
+      insight: protectionWeak
+        ? 'Complete your emergency fund before moving into new investments.'
+        : topAction,
+      tone: 'warning',
+    };
+  }
+
+  return {
+    headline: "You're in a strong financial position",
+    summary: `You are in Stage ${summary.stage?.id ?? 0}: ${stageName}, with solid savings habits and no major priority gaps showing.`,
+    insight: 'You can now focus on growing your wealth through investments and long-term planning.',
+    tone: 'good',
+  };
+};
+
+const getTopExpenseCategories = (transactions = []) => {
+  const currentMonth = monthKeyOffset(0);
+  const totals = transactions
+    .filter((tx) => tx.type === 'expense' && getMonthKey(tx.date) === currentMonth)
+    .reduce((acc, tx) => {
+      acc[tx.category] = (acc[tx.category] || 0) + (Number(tx.amount) || 0);
+      return acc;
+    }, {});
+
+  return Object.entries(totals)
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 3);
+};
+
+const getOverspentBudgets = (transactions = [], budgets = []) => {
+  const currentMonth = monthKeyOffset(0);
+  const spending = transactions
+    .filter((tx) => tx.type === 'expense' && getMonthKey(tx.date) === currentMonth)
+    .reduce((acc, tx) => {
+      acc[tx.category] = (acc[tx.category] || 0) + (Number(tx.amount) || 0);
+      return acc;
+    }, {});
+
+  return budgets
+    .map((budget) => ({
+      category: budget.category,
+      budget: Number(budget.amount) || 0,
+      spent: spending[budget.category] || 0,
+      overBy: Math.max(0, (spending[budget.category] || 0) - (Number(budget.amount) || 0)),
+    }))
+    .filter((budget) => budget.overBy > 0)
+    .sort((a, b) => b.overBy - a.overBy);
+};
+
+export const generateFinancialReport = (summary = {}, state = {}) => {
+  const transactions = Array.isArray(state.transactions) ? state.transactions : [];
+  const budgets = Array.isArray(state.budgets) ? state.budgets : [];
+  const profile = { ...DEFAULT_PROFILE, ...(state.userProfile || {}) };
+  const metrics = summary.metrics || {};
+  const stage = summary.stage || { id: 0, name: 'Survival' };
+  const priorities = Array.isArray(summary.priorities) ? summary.priorities : [];
+  const nextActions = Array.isArray(summary.nextActions) ? summary.nextActions : [];
+  const criticalItems = priorities.filter((item) => item.status === 'critical');
+  const warningItems = priorities.filter((item) => item.status === 'attention');
+  const emergencyGap = Math.max(0, (Number(metrics.emergencyTarget) || 0) - (Number(metrics.emergencySaved) || 0));
+  const protectionWeak = Boolean(metrics.protectionWeak);
+  const topExpenses = getTopExpenseCategories(transactions);
+  const overspentBudgets = getOverspentBudgets(transactions, budgets);
+  const savingsRate = Number(metrics.savingsRate) || 0;
+  const surplus = Number(metrics.surplus) || 0;
+  const score = Math.round(Number(summary.score) || 0);
+
+  const topExpenseText = topExpenses.length
+    ? topExpenses.map((item) => `${item.category} (${currency(item.amount)})`).join(', ')
+    : 'no major spending categories are visible yet';
+  const overspendingText = overspentBudgets.length
+    ? `${overspentBudgets[0].category} is over budget by ${currency(overspentBudgets[0].overBy)}`
+    : budgets.length ? 'your tracked budgets are mostly within limits' : 'you do not have enough budget limits set yet';
+
+  const overview = score >= 75
+    ? `You are currently in Stage ${stage.id}: ${stage.name}, with a financial health score of ${score}/100. Your finances look broadly stable, which means the focus can shift from fixing basics to improving consistency, planning, and long-term growth.`
+    : score >= 50
+      ? `You are currently in Stage ${stage.id}: ${stage.name}, with a financial health score of ${score}/100. You have some useful habits in place, but your plan is not fully steady yet, so the next few decisions should focus on strengthening the basics before taking on bigger goals.`
+      : `You are currently in Stage ${stage.id}: ${stage.name}, with a financial health score of ${score}/100. Right now, your finances need foundation work first; earning and spending activity exists, but the protection layer is not strong enough to absorb surprises comfortably.`;
+
+  const foundationAnalysis = (() => {
+    const emergencySentence = emergencyGap > 0
+      ? `Your emergency fund has ${currency(metrics.emergencySaved)} saved against a target of ${currency(metrics.emergencyTarget)}, leaving a gap of ${currency(emergencyGap)}. This matters because a job loss, medical bill, or urgent family expense can force you into debt if there is no cash cushion.`
+      : `Your emergency fund target of ${currency(metrics.emergencyTarget)} is covered, which gives your plan a real safety buffer. This makes every other financial decision less fragile because unexpected expenses are less likely to derail your budget.`;
+
+    const insuranceGaps = [];
+    if (!profile.hasHealthInsurance) insuranceGaps.push('health insurance');
+    if (Number(profile.dependents) > 0 && !profile.hasTermInsurance) insuranceGaps.push('term insurance');
+
+    const insuranceSentence = insuranceGaps.length
+      ? `You should also address ${insuranceGaps.join(' and ')}. Insurance is not about returns; it protects your savings and your family from one large event wiping out years of progress.`
+      : Number(profile.dependents) > 0
+        ? `Your insurance inputs do not show a major protection gap for a household with dependents. Keep these covers active, because dependents make income protection more important.`
+        : `Your insurance inputs do not show a major protection gap, and term insurance is not treated as mandatory because no dependents are listed.`;
+
+    return `${emergencySentence} ${insuranceSentence}`;
+  })();
+
+  const spendingAnalysis = `This month, income is ${currency(metrics.income)} and expenses are ${currency(metrics.expenses)}, leaving a surplus of ${signedCurrency(surplus)} and a savings rate of ${savingsRate.toFixed(1)}%. The largest visible spending areas are ${topExpenseText}, and ${overspendingText}.`;
+
+  const riskAnalysis = (() => {
+    if (protectionWeak) {
+      return `The biggest risk is that your financial plan can be disrupted by one unexpected event. If this continues, investing too early could create a false sense of progress while the real safety gaps remain open, so new growth commitments should wait until the emergency fund and insurance basics are stronger.`;
+    }
+
+    if (surplus <= 0 || savingsRate < 20 || warningItems.length > 0) {
+      return `The main risk now is slow progress rather than immediate danger. If savings stay below the 20% target or overspending keeps repeating, long-term goals may feel active on paper but remain underfunded in real life.`;
+    }
+
+    return `Your current risk level looks controlled. The main danger is complacency: once the basics are strong, the next challenge is making sure surplus money is consistently directed toward investments, retirement, and larger goals instead of being absorbed by lifestyle spending.`;
+  })();
+
+  const actionPlan = (() => {
+    const actions = nextActions.slice(0, 5);
+    if (!actions.length) {
+      return 'Your immediate plan is maintenance: keep tracking spending, review insurance once a quarter, and keep surplus money assigned to long-term goals before it gets spent casually.';
+    }
+
+    return actions
+      .map((action, index) => {
+        const prefix = `Step ${index + 1}: ${action.description}`;
+        if (index === 0 && emergencyGap > 0 && action.title.toLowerCase().includes('emergency')) {
+          return `${prefix} This should come first because the emergency fund is the cushion that protects every other part of your plan.`;
+        }
+        if (action.title.toLowerCase().includes('investment')) {
+          return `${prefix} Treat this as a guardrail, because growth decisions work best only after the foundation is safe.`;
+        }
+        return `${prefix} This will improve your financial position without adding complexity.`;
+      })
+      .join(' ');
+  })();
+
+  return {
+    overview,
+    foundationAnalysis,
+    spendingAnalysis,
+    riskAnalysis,
+    actionPlan: criticalItems.length
+      ? `${actionPlan} Because there are ${criticalItems.length} critical gaps, handle those before optimizing lower-priority areas.`
+      : actionPlan,
+  };
+};

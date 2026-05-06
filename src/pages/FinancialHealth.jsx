@@ -1,7 +1,9 @@
 import {
   AlertTriangle,
+  BookOpenText,
   CheckCircle2,
   CircleDollarSign,
+  ClipboardList,
   HeartPulse,
   LineChart,
   LockKeyhole,
@@ -15,7 +17,7 @@ import {
 import { useMemo } from 'react';
 import CircularProgress from '../components/ui/CircularProgress';
 import { useFinanceStore } from '../store/useFinanceStore';
-import { getFinancialHealthSummary } from '../utils/financialHealth';
+import { generateFinancialReport, getFinancialHealthSummary, getFinancialNarrative } from '../utils/financialHealth';
 import { formatCurrency } from '../utils/formatters';
 
 const STATUS_META = {
@@ -32,6 +34,14 @@ const LAYER_ICONS = {
 };
 
 const STAGE_ICONS = [AlertTriangle, ShieldCheck, SlidersHorizontal, LineChart, CircleDollarSign];
+
+const REPORT_SECTIONS = [
+  { key: 'overview', title: 'Overview', icon: HeartPulse },
+  { key: 'foundationAnalysis', title: 'Foundation Analysis', icon: ShieldCheck },
+  { key: 'spendingAnalysis', title: 'Spending & Behavior', icon: WalletCards },
+  { key: 'riskAnalysis', title: 'Risk Analysis', icon: AlertTriangle },
+  { key: 'actionPlan', title: 'Action Plan', icon: ClipboardList },
+];
 
 const scoreColor = (score) => {
   if (score < 50) return 'var(--red)';
@@ -114,12 +124,29 @@ export default function FinancialHealth() {
     () => getFinancialHealthSummary({ transactions, budgets, goals, userProfile }),
     [transactions, budgets, goals, userProfile]
   );
+  const narrative = useMemo(() => getFinancialNarrative(health), [health]);
+  const report = useMemo(
+    () => generateFinancialReport(health, { transactions, budgets, goals, userProfile }),
+    [health, transactions, budgets, goals, userProfile]
+  );
 
   const criticalItems = health.priorities.filter((item) => item.status === 'critical');
   const ringColor = scoreColor(health.score);
 
   return (
     <div className="page-container animate-in health-page">
+      <section className={`glass-card health-narrative-card ${narrative.tone}`}>
+        <div className="health-narrative-icon">
+          <HeartPulse size={24} />
+        </div>
+        <div>
+          <div className="label" style={{ marginBottom: 8 }}>Advisor Summary</div>
+          <h1>{narrative.headline}</h1>
+          <p>{narrative.summary}</p>
+          <p>{narrative.insight}</p>
+        </div>
+      </section>
+
       <div className="health-top-grid">
         <section className="glass-card health-score-card">
           <div>
@@ -177,6 +204,33 @@ export default function FinancialHealth() {
           </div>
         </section>
       )}
+
+      <section className="glass-card financial-report-card">
+        <div className="financial-report-header">
+          <div className="health-icon-box">
+            <BookOpenText size={20} />
+          </div>
+          <div>
+            <h2>Financial Report</h2>
+            <p>Advisor-style explanation generated from your live financial data.</p>
+          </div>
+        </div>
+
+        <div className="financial-report-grid">
+          {REPORT_SECTIONS.map(({ key, title, icon: Icon }, index) => (
+            <details key={key} className="report-section" open={index < 2}>
+              <summary>
+                <span>
+                  <Icon size={17} />
+                  {title}
+                </span>
+                <span className="report-toggle">Open</span>
+              </summary>
+              <p>{report[key]}</p>
+            </details>
+          ))}
+        </div>
+      </section>
 
       <section className="glass-card stage-stepper">
         {health.stages.map((stage, index) => {
