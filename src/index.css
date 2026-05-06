@@ -1276,6 +1276,43 @@ select option { background: var(--bg-surface); color: var(--text-primary); }
   gap: var(--space-5);
 }
 
+.planning-advanced-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+}
+
+.planning-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.03);
+  overflow: hidden;
+}
+
+.planning-panel[open] {
+  border-color: rgba(167, 139, 250, 0.24);
+}
+
+.planning-panel summary {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-4);
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 850;
+  list-style: none;
+}
+
+.planning-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.planning-panel .profile-grid {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
 .profile-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

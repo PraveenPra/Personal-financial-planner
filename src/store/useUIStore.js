@@ -1,10 +1,6 @@
 import { create } from 'zustand';
 
 export const useUIStore = create((set) => ({
-  // Financial Health view depth
-  mode: 'simple',
-  toggleMode: () => set((s) => ({ mode: s.mode === 'simple' ? 'advisor' : 'simple' })),
-
   // Sidebar
   sidebarCollapsed: false,
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),

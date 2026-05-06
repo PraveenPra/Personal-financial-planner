@@ -8,12 +8,32 @@ const LAYER_WEIGHTS = {
 };
 
 const DEFAULT_PROFILE = {
-  hasHealthInsurance: false,
-  hasTermInsurance: false,
-  dependents: 0,
+  mode: 'simple',
   monthlyExpenseEstimate: 0,
-  emergencyFundMonths: 3,
-  hasHighInterestDebt: false,
+  protection: {
+    healthInsurance: {
+      hasCoverage: false,
+      coverageAmount: 0,
+      monthlyPremium: 0,
+    },
+    termInsurance: {
+      hasCoverage: false,
+      coverageAmount: 0,
+      monthlyPremium: 0,
+    },
+    emergencyFundTargetMonths: 3,
+  },
+  debt: {
+    hasHighInterestDebt: false,
+    loans: [],
+  },
+  investments: {
+    monthlyInvestmentAmount: 0,
+    investmentTypes: [],
+  },
+  family: {
+    dependents: 0,
+  },
 };
 
 const STAGES = [
@@ -110,6 +130,55 @@ const findEmergencyGoal = (goals) =>
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
+const normalizeProfile = (state = {}) => {
+  const legacy = state.userProfile || {};
+  const profile = state.financialProfile || {};
+  return {
+    ...DEFAULT_PROFILE,
+    ...profile,
+    monthlyExpenseEstimate: profile.monthlyExpenseEstimate ?? legacy.monthlyExpenseEstimate ?? DEFAULT_PROFILE.monthlyExpenseEstimate,
+    protection: {
+      healthInsurance: {
+        ...DEFAULT_PROFILE.protection.healthInsurance,
+        ...(profile.protection?.healthInsurance || {}),
+        hasCoverage: profile.protection?.healthInsurance?.hasCoverage ?? legacy.hasHealthInsurance ?? DEFAULT_PROFILE.protection.healthInsurance.hasCoverage,
+      },
+      termInsurance: {
+        ...DEFAULT_PROFILE.protection.termInsurance,
+        ...(profile.protection?.termInsurance || {}),
+        hasCoverage: profile.protection?.termInsurance?.hasCoverage ?? legacy.hasTermInsurance ?? DEFAULT_PROFILE.protection.termInsurance.hasCoverage,
+      },
+      emergencyFundTargetMonths: profile.protection?.emergencyFundTargetMonths ?? legacy.emergencyFundMonths ?? DEFAULT_PROFILE.protection.emergencyFundTargetMonths,
+    },
+    debt: {
+      ...DEFAULT_PROFILE.debt,
+      ...(profile.debt || {}),
+      hasHighInterestDebt: profile.debt?.hasHighInterestDebt ?? legacy.hasHighInterestDebt ?? DEFAULT_PROFILE.debt.hasHighInterestDebt,
+      loans: Array.isArray(profile.debt?.loans) ? profile.debt.loans : [],
+    },
+    investments: {
+      ...DEFAULT_PROFILE.investments,
+      ...(profile.investments || {}),
+      investmentTypes: Array.isArray(profile.investments?.investmentTypes) ? profile.investments.investmentTypes : [],
+    },
+    family: {
+      ...DEFAULT_PROFILE.family,
+      ...(profile.family || {}),
+      dependents: profile.family?.dependents ?? legacy.dependents ?? DEFAULT_PROFILE.family.dependents,
+    },
+  };
+};
+
+const getDebtMetrics = (profile, income) => {
+  const loans = Array.isArray(profile.debt?.loans) ? profile.debt.loans : [];
+  const monthlyEmi = loans.reduce((total, loan) => total + (Number(loan.emi) || 0), 0);
+  return {
+    loans,
+    monthlyEmi,
+    emiBurden: income > 0 ? (monthlyEmi / income) * 100 : 0,
+  };
+};
+
 const evaluateBudgets = (transactions, budgets) => {
   if (!budgets.length) {
     return { score: 0, overspent: [], activeCount: 0, underLimitCount: 0 };
@@ -155,7 +224,7 @@ export const getFinancialHealthSummary = (state = {}) => {
   const transactions = Array.isArray(state.transactions) ? state.transactions : [];
   const budgets = Array.isArray(state.budgets) ? state.budgets : [];
   const goals = Array.isArray(state.goals) ? state.goals : [];
-  const profile = { ...DEFAULT_PROFILE, ...(state.userProfile || {}) };
+  const profile = normalizeProfile(state);
 
   const currentSummary = getCurrentMonthSummary(transactions);
   const monthlySummaries = getMonthlySummaries(transactions);
@@ -165,17 +234,32 @@ export const getFinancialHealthSummary = (state = {}) => {
     : activeMonths.length
       ? sum(activeMonths.map((month) => ({ amount: month.expenses }))) / activeMonths.length
       : currentSummary.expenses;
+  const debtMetrics = getDebtMetrics(profile, currentSummary.income);
 
   const emergencyGoal = findEmergencyGoal(goals);
   const emergencyTarget = Math.max(
     Number(emergencyGoal?.target) || 0,
-    averageExpenses * clamp(profile.emergencyFundMonths, 3, 6)
+    averageExpenses * clamp(profile.protection.emergencyFundTargetMonths, 3, 6)
   );
   const emergencySaved = Number(emergencyGoal?.saved) || 0;
   const emergencyPercent = emergencyTarget > 0 ? (emergencySaved / emergencyTarget) * 100 : 0;
   const emergencyMonths = averageExpenses > 0 ? emergencySaved / averageExpenses : 0;
 
-  const termInsuranceScore = Number(profile.dependents) > 0 ? (profile.hasTermInsurance ? 100 : 0) : 100;
+  const annualIncome = currentSummary.income * 12;
+  const suggestedTermCover = Number(profile.family.dependents) > 0 ? annualIncome * 10 : 0;
+  const termCoverageRatio = suggestedTermCover > 0
+    ? (Number(profile.protection.termInsurance.coverageAmount) || 0) / suggestedTermCover
+    : 1;
+  const healthCoverageNeed = Number(profile.family.dependents) > 0 ? 1000000 : 500000;
+  const healthCoverageRatio = (Number(profile.protection.healthInsurance.coverageAmount) || 0) / healthCoverageNeed;
+  const healthInsuranceScore = profile.protection.healthInsurance.hasCoverage
+    ? clamp(healthCoverageRatio * 100, 50, 100)
+    : 0;
+  const termInsuranceScore = Number(profile.family.dependents) > 0
+    ? profile.protection.termInsurance.hasCoverage
+      ? clamp(termCoverageRatio * 100, 45, 100)
+      : 0
+    : 100;
   const protectionFactors = [
     factor({
       id: 'emergencyFund',
@@ -193,23 +277,30 @@ export const getFinancialHealthSummary = (state = {}) => {
     factor({
       id: 'healthInsurance',
       label: 'Health insurance',
-      score: profile.hasHealthInsurance ? 100 : 0,
-      status: profile.hasHealthInsurance ? 'good' : 'critical',
-      metric: profile.hasHealthInsurance ? 'Covered' : 'Missing',
-      detail: profile.hasHealthInsurance ? 'Manual profile input says coverage is in place.' : 'Medical shocks can derail every other plan.',
-      action: profile.hasHealthInsurance ? 'Keep health cover active.' : 'Add health insurance before increasing optional investments.',
+      score: healthInsuranceScore,
+      status: !profile.protection.healthInsurance.hasCoverage ? 'critical' : healthCoverageRatio < 1 ? 'attention' : 'good',
+      metric: profile.protection.healthInsurance.hasCoverage ? `${currency(profile.protection.healthInsurance.coverageAmount)} cover` : 'Missing',
+      detail: profile.protection.healthInsurance.hasCoverage
+        ? healthCoverageRatio < 1 ? 'Coverage may be low for your family size.' : 'Health coverage is in place.'
+        : 'Medical shocks can derail every other plan.',
+      action: !profile.protection.healthInsurance.hasCoverage
+        ? 'Add health insurance before increasing optional investments.'
+        : healthCoverageRatio < 1 ? `Consider raising health cover toward ${currency(healthCoverageNeed)}.` : 'Keep health cover active.',
     }),
     factor({
       id: 'termInsurance',
       label: 'Term insurance',
       score: termInsuranceScore,
       status: termInsuranceScore === 100 ? 'good' : 'critical',
-      metric: Number(profile.dependents) > 0 ? `${profile.dependents} dependents` : 'No dependents',
-      detail: Number(profile.dependents) > 0
-        ? profile.hasTermInsurance ? 'Dependents are protected by term cover.' : 'Dependents are present but term cover is missing.'
+      metric: Number(profile.family.dependents) > 0 ? `${currency(profile.protection.termInsurance.coverageAmount)} cover` : 'No dependents',
+      detail: Number(profile.family.dependents) > 0
+        ? profile.protection.termInsurance.hasCoverage
+          ? termCoverageRatio < 1 ? `Suggested cover is around ${currency(suggestedTermCover)}.` : 'Dependents are protected by term cover.'
+          : 'Dependents are present but term cover is missing.'
         : 'Skipped because there are no dependents.',
-      action: Number(profile.dependents) > 0 && !profile.hasTermInsurance
+      action: Number(profile.family.dependents) > 0 && !profile.protection.termInsurance.hasCoverage
         ? 'Get term insurance because dependents rely on your income.'
+        : Number(profile.family.dependents) > 0 && termCoverageRatio < 1 ? `Increase term cover toward ${currency(suggestedTermCover)}.`
         : 'No term insurance action needed right now.',
     }),
   ];
@@ -243,11 +334,15 @@ export const getFinancialHealthSummary = (state = {}) => {
     factor({
       id: 'highInterestDebt',
       label: 'High-interest debt',
-      score: profile.hasHighInterestDebt ? 0 : 100,
-      status: profile.hasHighInterestDebt ? 'critical' : 'good',
-      metric: profile.hasHighInterestDebt ? 'Flagged' : 'None flagged',
-      detail: profile.hasHighInterestDebt ? 'High-interest debt beats most investment returns.' : 'No high-interest debt flag is active.',
-      action: profile.hasHighInterestDebt ? 'Prioritize high-interest debt payoff before growth goals.' : 'No debt payoff blocker detected.',
+      score: profile.debt.hasHighInterestDebt ? 0 : debtMetrics.emiBurden > 40 ? 35 : debtMetrics.emiBurden > 30 ? 65 : 100,
+      status: profile.debt.hasHighInterestDebt || debtMetrics.emiBurden > 40 ? 'critical' : debtMetrics.emiBurden > 30 ? 'attention' : 'good',
+      metric: profile.debt.hasHighInterestDebt ? 'Flagged' : debtMetrics.loans.length ? `${debtMetrics.emiBurden.toFixed(1)}% EMI burden` : 'None flagged',
+      detail: profile.debt.hasHighInterestDebt
+        ? 'High-interest debt beats most investment returns.'
+        : debtMetrics.loans.length ? `Loan EMIs total ${currency(debtMetrics.monthlyEmi)} per month.` : 'No high-interest debt flag is active.',
+      action: profile.debt.hasHighInterestDebt
+        ? 'Prioritize high-interest debt payoff before growth goals.'
+        : debtMetrics.emiBurden > 30 ? 'Reduce EMI burden before adding aggressive growth commitments.' : 'No debt payoff blocker detected.',
     }),
   ];
 
@@ -282,10 +377,10 @@ export const getFinancialHealthSummary = (state = {}) => {
     factor({
       id: 'investingBehavior',
       label: 'Investing behavior',
-      score: hasInvesting ? 100 : 25,
-      status: hasInvesting ? 'good' : 'attention',
-      metric: hasInvesting ? 'Detected' : 'Not detected',
-      detail: hasInvesting ? 'Investment-like transactions are present.' : 'No investment transactions found yet.',
+      score: hasInvesting || Number(profile.investments.monthlyInvestmentAmount) > 0 ? 100 : 25,
+      status: hasInvesting || Number(profile.investments.monthlyInvestmentAmount) > 0 ? 'good' : 'attention',
+      metric: hasInvesting || Number(profile.investments.monthlyInvestmentAmount) > 0 ? `${currency(profile.investments.monthlyInvestmentAmount)} planned` : 'Not detected',
+      detail: hasInvesting || Number(profile.investments.monthlyInvestmentAmount) > 0 ? 'Investment behavior or planned SIP is present.' : 'No investment transactions found yet.',
       action: hasInvesting ? 'Keep investing aligned with goals.' : 'Start investing only after protection is no longer weak.',
     }),
   ];
@@ -327,7 +422,7 @@ export const getFinancialHealthSummary = (state = {}) => {
     layer({ id: 'future', name: 'Future', weight: LAYER_WEIGHTS.future, factors: futureFactors }),
   ];
 
-  const protectionWeak = emergencyPercent < 50 || !profile.hasHealthInsurance || (Number(profile.dependents) > 0 && !profile.hasTermInsurance);
+  const protectionWeak = emergencyPercent < 50 || !profile.protection.healthInsurance.hasCoverage || (Number(profile.family.dependents) > 0 && !profile.protection.termInsurance.hasCoverage);
   const score = round(layers.reduce((total, item) => total + item.score * item.weight, 0));
   const priorities = layers.flatMap((item) =>
     item.factors.map((itemFactor) => ({
@@ -388,9 +483,10 @@ export const getFinancialHealthSummary = (state = {}) => {
   ];
   const warnings = [
     ...(emergencyPercent < 50 ? ['Not recommended to invest yet - emergency fund is below 50%.'] : []),
-    ...(!profile.hasHealthInsurance ? ['Growth plans are fragile until health insurance is in place.'] : []),
-    ...(Number(profile.dependents) > 0 && !profile.hasTermInsurance ? ['Dependents are exposed until term insurance is in place.'] : []),
-    ...(profile.hasHighInterestDebt ? ['Pay high-interest debt before adding new growth commitments.'] : []),
+    ...(!profile.protection.healthInsurance.hasCoverage ? ['Growth plans are fragile until health insurance is in place.'] : []),
+    ...(Number(profile.family.dependents) > 0 && !profile.protection.termInsurance.hasCoverage ? ['Dependents are exposed until term insurance is in place.'] : []),
+    ...(profile.debt.hasHighInterestDebt ? ['Pay high-interest debt before adding new growth commitments.'] : []),
+    ...(debtMetrics.emiBurden > 40 ? ['EMI burden is above 40% of monthly income, which adds financial stress.'] : []),
   ];
 
   return {
@@ -413,6 +509,10 @@ export const getFinancialHealthSummary = (state = {}) => {
       emergencyPercent: clamp(emergencyPercent),
       emergencyMonths,
       protectionWeak,
+      healthCoverageNeed,
+      suggestedTermCover,
+      debtEmiBurden: debtMetrics.emiBurden,
+      monthlyEmi: debtMetrics.monthlyEmi,
     },
   };
 };
@@ -423,6 +523,7 @@ const cloneStateForSimulation = (state = {}) => ({
   budgets: Array.isArray(state.budgets) ? state.budgets.map((budget) => ({ ...budget })) : [],
   goals: Array.isArray(state.goals) ? state.goals.map((goal) => ({ ...goal })) : [],
   userProfile: { ...(state.userProfile || {}) },
+  financialProfile: normalizeProfile(state),
 });
 
 const reduceCurrentMonthExpense = (transactions, category, amount) => {
@@ -451,7 +552,7 @@ export const simulateFinancialChange = (state = {}, scenario = {}) => {
       );
     } else {
       simulatedState.goals.push({
-        id: `scenario-emergency-${Date.now()}`,
+        id: 'scenario-emergency-fund',
         name: 'Emergency Fund',
         icon: 'savings',
         target: Number(baseSummary.metrics?.emergencyTarget) || Number(scenario.addSavings),
@@ -472,7 +573,7 @@ export const simulateFinancialChange = (state = {}, scenario = {}) => {
 
   if ((Number(scenario.increaseIncome) || 0) > 0) {
     simulatedState.transactions.unshift({
-      id: `scenario-income-${Date.now()}`,
+      id: 'scenario-income-increase',
       type: 'income',
       category: 'other_inc',
       amount: Number(scenario.increaseIncome),
@@ -482,13 +583,37 @@ export const simulateFinancialChange = (state = {}, scenario = {}) => {
   }
 
   if ((Number(scenario.addInvestment) || 0) > 0) {
+    simulatedState.financialProfile.investments.monthlyInvestmentAmount =
+      (Number(simulatedState.financialProfile.investments.monthlyInvestmentAmount) || 0) + Number(scenario.addInvestment);
     simulatedState.transactions.unshift({
-      id: `scenario-investment-${Date.now()}`,
+      id: 'scenario-investment-add',
       type: 'expense',
       category: 'investment',
       amount: Number(scenario.addInvestment),
       note: 'Scenario SIP investment',
       date: todayISO(),
+    });
+  }
+
+  if ((Number(scenario.increaseHealthCoverage) || 0) > 0) {
+    simulatedState.financialProfile.protection.healthInsurance.hasCoverage = true;
+    simulatedState.financialProfile.protection.healthInsurance.coverageAmount =
+      (Number(simulatedState.financialProfile.protection.healthInsurance.coverageAmount) || 0) + Number(scenario.increaseHealthCoverage);
+  }
+
+  if ((Number(scenario.increaseTermCoverage) || 0) > 0) {
+    simulatedState.financialProfile.protection.termInsurance.hasCoverage = true;
+    simulatedState.financialProfile.protection.termInsurance.coverageAmount =
+      (Number(simulatedState.financialProfile.protection.termInsurance.coverageAmount) || 0) + Number(scenario.increaseTermCoverage);
+  }
+
+  if ((Number(scenario.reduceEmi) || 0) > 0 && simulatedState.financialProfile.debt.loans.length > 0) {
+    let remaining = Number(scenario.reduceEmi);
+    simulatedState.financialProfile.debt.loans = simulatedState.financialProfile.debt.loans.map((loan) => {
+      if (remaining <= 0) return loan;
+      const reduction = Math.min(Number(loan.emi) || 0, remaining);
+      remaining -= reduction;
+      return { ...loan, emi: Math.max(0, (Number(loan.emi) || 0) - reduction) };
     });
   }
 
@@ -634,7 +759,7 @@ const getOverspentBudgets = (transactions = [], budgets = []) => {
 export const generateFinancialReport = (summary = {}, state = {}) => {
   const transactions = Array.isArray(state.transactions) ? state.transactions : [];
   const budgets = Array.isArray(state.budgets) ? state.budgets : [];
-  const profile = { ...DEFAULT_PROFILE, ...(state.userProfile || {}) };
+  const profile = normalizeProfile(state);
   const metrics = summary.metrics || {};
   const stage = summary.stage || { id: 0, name: 'Survival' };
   const priorities = Array.isArray(summary.priorities) ? summary.priorities : [];
@@ -643,6 +768,7 @@ export const generateFinancialReport = (summary = {}, state = {}) => {
   const warningItems = priorities.filter((item) => item.status === 'attention');
   const emergencyGap = Math.max(0, (Number(metrics.emergencyTarget) || 0) - (Number(metrics.emergencySaved) || 0));
   const protectionWeak = Boolean(metrics.protectionWeak);
+  const debtMetrics = getDebtMetrics(profile, Number(metrics.income) || 0);
   const topExpenses = getTopExpenseCategories(transactions);
   const overspentBudgets = getOverspentBudgets(transactions, budgets);
   const savingsRate = Number(metrics.savingsRate) || 0;
@@ -668,23 +794,29 @@ export const generateFinancialReport = (summary = {}, state = {}) => {
       : `Your emergency fund target of ${currency(metrics.emergencyTarget)} is covered, which gives your plan a real safety buffer. This makes every other financial decision less fragile because unexpected expenses are less likely to derail your budget.`;
 
     const insuranceGaps = [];
-    if (!profile.hasHealthInsurance) insuranceGaps.push('health insurance');
-    if (Number(profile.dependents) > 0 && !profile.hasTermInsurance) insuranceGaps.push('term insurance');
+    if (!profile.protection.healthInsurance.hasCoverage) insuranceGaps.push('health insurance');
+    if (Number(profile.family.dependents) > 0 && !profile.protection.termInsurance.hasCoverage) insuranceGaps.push('term insurance');
 
+    const healthCover = Number(profile.protection.healthInsurance.coverageAmount) || 0;
+    const termCover = Number(profile.protection.termInsurance.coverageAmount) || 0;
     const insuranceSentence = insuranceGaps.length
       ? `You should also address ${insuranceGaps.join(' and ')}. Insurance is not about returns; it protects your savings and your family from one large event wiping out years of progress.`
-      : Number(profile.dependents) > 0
-        ? `Your insurance inputs do not show a major protection gap for a household with dependents. Keep these covers active, because dependents make income protection more important.`
-        : `Your insurance inputs do not show a major protection gap, and term insurance is not treated as mandatory because no dependents are listed.`;
+      : Number(profile.family.dependents) > 0
+        ? `Your listed health cover is ${currency(healthCover)} and term cover is ${currency(termCover)} for ${profile.family.dependents} dependents. Keep checking adequacy because dependents make both medical and income protection more important.`
+        : `Your listed health cover is ${currency(healthCover)}, and term insurance is not treated as mandatory because no dependents are listed.`;
 
     return `${emergencySentence} ${insuranceSentence}`;
   })();
 
-  const spendingAnalysis = `This month, income is ${currency(metrics.income)} and expenses are ${currency(metrics.expenses)}, leaving a surplus of ${signedCurrency(surplus)} and a savings rate of ${savingsRate.toFixed(1)}%. The largest visible spending areas are ${topExpenseText}, and ${overspendingText}.`;
+  const spendingAnalysis = `This month, income is ${currency(metrics.income)} and expenses are ${currency(metrics.expenses)}, leaving a surplus of ${signedCurrency(surplus)} and a savings rate of ${savingsRate.toFixed(1)}%. The largest visible spending areas are ${topExpenseText}, and ${overspendingText}. ${debtMetrics.monthlyEmi > 0 ? `Your EMIs total ${currency(debtMetrics.monthlyEmi)}, which is ${debtMetrics.emiBurden.toFixed(1)}% of monthly income.` : 'No loan EMI burden is currently entered in the profile.'}`;
 
   const riskAnalysis = (() => {
     if (protectionWeak) {
       return `The biggest risk is that your financial plan can be disrupted by one unexpected event. If this continues, investing too early could create a false sense of progress while the real safety gaps remain open, so new growth commitments should wait until the emergency fund and insurance basics are stronger.`;
+    }
+
+    if (debtMetrics.emiBurden > 40) {
+      return `The biggest structural risk is debt pressure. If EMI burden stays above 40% of income, your budget has less room for emergencies, goals, and investments, even if your income looks healthy on paper.`;
     }
 
     if (surplus <= 0 || savingsRate < 20 || warningItems.length > 0) {

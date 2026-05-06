@@ -19,7 +19,6 @@ import {
 import { useMemo, useState } from 'react';
 import CircularProgress from '../components/ui/CircularProgress';
 import { useFinanceStore } from '../store/useFinanceStore';
-import { useUIStore } from '../store/useUIStore';
 import {
   generateFinancialReport,
   getExplanation,
@@ -188,6 +187,9 @@ function WhatIfPlanner({ state, health }) {
     reduceExpense: { category: defaultCategory, amount: 0 },
     increaseIncome: 0,
     addInvestment: 0,
+    increaseHealthCoverage: 0,
+    increaseTermCoverage: 0,
+    reduceEmi: 0,
   });
 
   const simulation = useMemo(
@@ -206,6 +208,9 @@ function WhatIfPlanner({ state, health }) {
     reduceExpense: { category: defaultCategory, amount: 0 },
     increaseIncome: 0,
     addInvestment: 0,
+    increaseHealthCoverage: 0,
+    increaseTermCoverage: 0,
+    reduceEmi: 0,
   });
 
   const completeEmergencyFund = () => updateScenario({ addSavings: Math.round(emergencyGap) });
@@ -310,6 +315,54 @@ function WhatIfPlanner({ state, health }) {
             />
             <p>{health.metrics.protectionWeak ? 'Complete basics first. You can still simulate the impact.' : 'Model a monthly SIP or investment contribution.'}</p>
           </div>
+
+          <div className="sim-control">
+            <div className="flex-between">
+              <span>Insurance Upgrade</span>
+              <strong>+{formatCurrency(scenario.increaseHealthCoverage)}</strong>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1500000"
+              step="100000"
+              value={scenario.increaseHealthCoverage}
+              onChange={(event) => updateScenario({ increaseHealthCoverage: Number(event.target.value) })}
+            />
+            <p>Increase health cover and see foundation risk change.</p>
+          </div>
+
+          <div className="sim-control">
+            <div className="flex-between">
+              <span>Term Cover Boost</span>
+              <strong>+{formatCurrency(scenario.increaseTermCoverage)}</strong>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="10000000"
+              step="500000"
+              value={scenario.increaseTermCoverage}
+              onChange={(event) => updateScenario({ increaseTermCoverage: Number(event.target.value) })}
+            />
+            <p>Model extra life cover for dependents.</p>
+          </div>
+
+          <div className="sim-control">
+            <div className="flex-between">
+              <span>EMI Relief</span>
+              <strong>-{formatCurrency(scenario.reduceEmi)}</strong>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="50000"
+              step="1000"
+              value={scenario.reduceEmi}
+              onChange={(event) => updateScenario({ reduceEmi: Number(event.target.value) })}
+            />
+            <p>Simulate lowering monthly loan obligations.</p>
+          </div>
         </div>
 
         <div className={`glass-card simulator-impact ${scoreTone}`}>
@@ -363,14 +416,13 @@ export default function FinancialHealth() {
   const transactions = useFinanceStore((s) => s.transactions);
   const budgets = useFinanceStore((s) => s.budgets);
   const goals = useFinanceStore((s) => s.goals);
-  const userProfile = useFinanceStore((s) => s.userProfile);
-  const updateUserProfile = useFinanceStore((s) => s.updateUserProfile);
-  const mode = useUIStore((s) => s.mode);
-  const toggleMode = useUIStore((s) => s.toggleMode);
+  const financialProfile = useFinanceStore((s) => s.financialProfile);
+  const updateFinancialProfile = useFinanceStore((s) => s.updateFinancialProfile);
+  const toggleFinancialMode = useFinanceStore((s) => s.toggleFinancialMode);
   const [explanation, setExplanation] = useState(null);
   const financeState = useMemo(
-    () => ({ transactions, budgets, goals, userProfile }),
-    [transactions, budgets, goals, userProfile]
+    () => ({ transactions, budgets, goals, financialProfile }),
+    [transactions, budgets, goals, financialProfile]
   );
   const health = useMemo(
     () => getFinancialHealthSummary(financeState),
@@ -384,7 +436,7 @@ export default function FinancialHealth() {
 
   const criticalItems = health.priorities.filter((item) => item.status === 'critical');
   const ringColor = scoreColor(health.score);
-  const isAdvisor = mode === 'advisor';
+  const isAdvisor = (financialProfile?.mode || 'simple') === 'advisor';
   const openExplanation = (item) => {
     const detail = getExplanation(EXPLANATION_TYPES[item.id] || 'general', {
       protectionWeak: health.metrics.protectionWeak,
@@ -404,7 +456,7 @@ export default function FinancialHealth() {
           <div className="label">View Mode</div>
           <strong>{isAdvisor ? 'Advisor Mode' : 'Simple Mode'}</strong>
         </div>
-        <button className={`mode-toggle ${isAdvisor ? 'advisor' : ''}`} onClick={toggleMode}>
+        <button className={`mode-toggle ${isAdvisor ? 'advisor' : ''}`} onClick={toggleFinancialMode}>
           <span>Simple</span>
           <span>Advisor</span>
         </button>
@@ -568,47 +620,46 @@ export default function FinancialHealth() {
         </div>
       )}
 
-      {isAdvisor && (
-        <section className="glass-card profile-setup">
+      <section className="glass-card profile-setup">
           <div>
-            <h2 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: 4 }}>Profile Setup</h2>
-            <p className="text-xs text-muted">Manual inputs used only where transactions cannot answer the question.</p>
+            <h2 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: 4 }}>Financial Planning Workspace</h2>
+            <p className="text-xs text-muted">Structured financial life data used by reports, scenarios, and advisor logic.</p>
           </div>
 
           <div className="profile-grid">
             <ToggleField
               label="Health insurance"
-              checked={Boolean(userProfile?.hasHealthInsurance)}
-              onChange={(value) => updateUserProfile({ hasHealthInsurance: value })}
+              checked={Boolean(financialProfile?.protection?.healthInsurance?.hasCoverage)}
+              onChange={(value) => updateFinancialProfile({ protection: { healthInsurance: { hasCoverage: value } } })}
             />
             <ToggleField
               label="Term insurance"
-              checked={Boolean(userProfile?.hasTermInsurance)}
-              onChange={(value) => updateUserProfile({ hasTermInsurance: value })}
+              checked={Boolean(financialProfile?.protection?.termInsurance?.hasCoverage)}
+              onChange={(value) => updateFinancialProfile({ protection: { termInsurance: { hasCoverage: value } } })}
             />
             <ToggleField
               label="High-interest debt"
-              checked={Boolean(userProfile?.hasHighInterestDebt)}
-              onChange={(value) => updateUserProfile({ hasHighInterestDebt: value })}
+              checked={Boolean(financialProfile?.debt?.hasHighInterestDebt)}
+              onChange={(value) => updateFinancialProfile({ debt: { hasHighInterestDebt: value } })}
             />
             <div className="form-group">
               <label className="form-label">Dependents</label>
               <input
                 type="number"
                 min="0"
-                value={userProfile?.dependents ?? 0}
-                onChange={(event) => updateUserProfile({ dependents: Math.max(0, Number(event.target.value) || 0) })}
+                value={financialProfile?.family?.dependents ?? 0}
+                onChange={(event) => updateFinancialProfile({ family: { dependents: Math.max(0, Number(event.target.value) || 0) } })}
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Emergency fund target: {userProfile?.emergencyFundMonths ?? 3} months</label>
+              <label className="form-label">Emergency fund target: {financialProfile?.protection?.emergencyFundTargetMonths ?? 3} months</label>
               <input
                 type="range"
                 min="3"
                 max="6"
                 step="1"
-                value={userProfile?.emergencyFundMonths ?? 3}
-                onChange={(event) => updateUserProfile({ emergencyFundMonths: Number(event.target.value) })}
+                value={financialProfile?.protection?.emergencyFundTargetMonths ?? 3}
+                onChange={(event) => updateFinancialProfile({ protection: { emergencyFundTargetMonths: Number(event.target.value) } })}
               />
             </div>
             <div className="form-group">
@@ -617,13 +668,117 @@ export default function FinancialHealth() {
                 type="number"
                 min="0"
                 placeholder="Auto-derived"
-                value={userProfile?.monthlyExpenseEstimate || ''}
-                onChange={(event) => updateUserProfile({ monthlyExpenseEstimate: Number(event.target.value) || 0 })}
+                value={financialProfile?.monthlyExpenseEstimate || ''}
+                onChange={(event) => updateFinancialProfile({ monthlyExpenseEstimate: Number(event.target.value) || 0 })}
               />
             </div>
           </div>
+
+          {isAdvisor && (
+          <div className="planning-advanced-grid">
+            <details className="planning-panel" open>
+              <summary>Protection Details</summary>
+              <div className="profile-grid">
+                <div className="form-group">
+                  <label className="form-label">Health cover amount</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={financialProfile?.protection?.healthInsurance?.coverageAmount ?? 0}
+                    onChange={(event) => updateFinancialProfile({ protection: { healthInsurance: { coverageAmount: Number(event.target.value) || 0 } } })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Health premium/month</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={financialProfile?.protection?.healthInsurance?.monthlyPremium ?? 0}
+                    onChange={(event) => updateFinancialProfile({ protection: { healthInsurance: { monthlyPremium: Number(event.target.value) || 0 } } })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Term cover amount</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={financialProfile?.protection?.termInsurance?.coverageAmount ?? 0}
+                    onChange={(event) => updateFinancialProfile({ protection: { termInsurance: { coverageAmount: Number(event.target.value) || 0 } } })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Term premium/month</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={financialProfile?.protection?.termInsurance?.monthlyPremium ?? 0}
+                    onChange={(event) => updateFinancialProfile({ protection: { termInsurance: { monthlyPremium: Number(event.target.value) || 0 } } })}
+                  />
+                </div>
+              </div>
+            </details>
+
+            <details className="planning-panel">
+              <summary>Loans & Investments</summary>
+              <div className="profile-grid">
+                <div className="form-group">
+                  <label className="form-label">Primary loan EMI</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={financialProfile?.debt?.loans?.[0]?.emi ?? 0}
+                    onChange={(event) => updateFinancialProfile({
+                      debt: {
+                        loans: [{
+                          ...(financialProfile?.debt?.loans?.[0] || { id: 'primary-loan', type: 'personal', interestRate: 12, remainingTenureMonths: 24 }),
+                          emi: Number(event.target.value) || 0,
+                        }],
+                      },
+                    })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Loan interest rate</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={financialProfile?.debt?.loans?.[0]?.interestRate ?? 0}
+                    onChange={(event) => updateFinancialProfile({
+                      debt: {
+                        loans: [{
+                          ...(financialProfile?.debt?.loans?.[0] || { id: 'primary-loan', type: 'personal', emi: 0, remainingTenureMonths: 24 }),
+                          interestRate: Number(event.target.value) || 0,
+                        }],
+                      },
+                    })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Monthly SIP/investment</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={financialProfile?.investments?.monthlyInvestmentAmount ?? 0}
+                    onChange={(event) => updateFinancialProfile({ investments: { monthlyInvestmentAmount: Number(event.target.value) || 0 } })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Investment type</label>
+                  <select
+                    value={financialProfile?.investments?.investmentTypes?.[0] || 'mutual_funds'}
+                    onChange={(event) => updateFinancialProfile({ investments: { investmentTypes: [event.target.value] } })}
+                  >
+                    <option value="mutual_funds">Mutual funds</option>
+                    <option value="stocks">Stocks</option>
+                    <option value="fixed_income">Fixed income</option>
+                    <option value="retirement">Retirement</option>
+                  </select>
+                </div>
+              </div>
+            </details>
+          </div>
+          )}
         </section>
-      )}
 
     </div>
     <ExplanationModal explanation={explanation} onClose={() => setExplanation(null)} />

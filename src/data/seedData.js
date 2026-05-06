@@ -123,11 +123,40 @@ export const SEED_GOALS = [
   },
 ];
 
-export const SEED_USER_PROFILE = {
-  hasHealthInsurance: true,
-  hasTermInsurance: false,
-  dependents: 0,
+export const SEED_FINANCIAL_PROFILE = {
+  mode: 'simple',
   monthlyExpenseEstimate: 0,
-  emergencyFundMonths: 3,
-  hasHighInterestDebt: false,
+  protection: {
+    healthInsurance: {
+      hasCoverage: true,
+      coverageAmount: 500000,
+      monthlyPremium: 1200,
+    },
+    termInsurance: {
+      hasCoverage: false,
+      coverageAmount: 0,
+      monthlyPremium: 0,
+    },
+    emergencyFundTargetMonths: 3,
+  },
+  debt: {
+    hasHighInterestDebt: false,
+    loans: [],
+  },
+  investments: {
+    monthlyInvestmentAmount: 10000,
+    investmentTypes: ['mutual_funds'],
+  },
+  family: {
+    dependents: 0,
+  },
+};
+
+export const SEED_USER_PROFILE = {
+  hasHealthInsurance: SEED_FINANCIAL_PROFILE.protection.healthInsurance.hasCoverage,
+  hasTermInsurance: SEED_FINANCIAL_PROFILE.protection.termInsurance.hasCoverage,
+  dependents: SEED_FINANCIAL_PROFILE.family.dependents,
+  monthlyExpenseEstimate: SEED_FINANCIAL_PROFILE.monthlyExpenseEstimate,
+  emergencyFundMonths: SEED_FINANCIAL_PROFILE.protection.emergencyFundTargetMonths,
+  hasHighInterestDebt: SEED_FINANCIAL_PROFILE.debt.hasHighInterestDebt,
 };

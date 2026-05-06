@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { SEED_TRANSACTIONS, SEED_BUDGETS, SEED_GOALS, SEED_USER_PROFILE } from '../data/seedData';
+import { SEED_TRANSACTIONS, SEED_BUDGETS, SEED_GOALS, SEED_FINANCIAL_PROFILE, SEED_USER_PROFILE } from '../data/seedData';
 import { getMonthKey } from '../utils/formatters';
 import { getFinancialHealthSummary } from '../utils/financialHealth';
 
@@ -12,6 +12,47 @@ const currentMonth = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
+
+const deepMerge = (base, updates) => {
+  if (!updates || typeof updates !== 'object' || Array.isArray(updates)) return base;
+  return Object.keys(updates).reduce((merged, key) => {
+    const nextValue = updates[key];
+    if (
+      nextValue &&
+      typeof nextValue === 'object' &&
+      !Array.isArray(nextValue) &&
+      merged[key] &&
+      typeof merged[key] === 'object' &&
+      !Array.isArray(merged[key])
+    ) {
+      return { ...merged, [key]: deepMerge(merged[key], nextValue) };
+    }
+    return { ...merged, [key]: nextValue };
+  }, { ...base });
+};
+
+const migrateUserProfile = (userProfile = {}) => ({
+  ...SEED_FINANCIAL_PROFILE,
+  monthlyExpenseEstimate: userProfile.monthlyExpenseEstimate ?? SEED_FINANCIAL_PROFILE.monthlyExpenseEstimate,
+  protection: {
+    healthInsurance: {
+      ...SEED_FINANCIAL_PROFILE.protection.healthInsurance,
+      hasCoverage: Boolean(userProfile.hasHealthInsurance),
+    },
+    termInsurance: {
+      ...SEED_FINANCIAL_PROFILE.protection.termInsurance,
+      hasCoverage: Boolean(userProfile.hasTermInsurance),
+    },
+    emergencyFundTargetMonths: userProfile.emergencyFundMonths ?? SEED_FINANCIAL_PROFILE.protection.emergencyFundTargetMonths,
+  },
+  debt: {
+    ...SEED_FINANCIAL_PROFILE.debt,
+    hasHighInterestDebt: Boolean(userProfile.hasHighInterestDebt),
+  },
+  family: {
+    dependents: Number(userProfile.dependents) || 0,
+  },
+});
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 export const useFinanceStore = create(
@@ -27,6 +68,7 @@ export const useFinanceStore = create(
         locale: 'en-IN',
       },
       userProfile: SEED_USER_PROFILE,
+      financialProfile: SEED_FINANCIAL_PROFILE,
 
       // ─── Transaction Actions ─────────────────────────────────────────────
       addTransaction: (tx) =>
@@ -105,6 +147,18 @@ export const useFinanceStore = create(
       updateUserProfile: (updates) =>
         set((s) => ({ userProfile: { ...SEED_USER_PROFILE, ...s.userProfile, ...updates } })),
 
+      updateFinancialProfile: (updates) =>
+        set((s) => ({ financialProfile: deepMerge(SEED_FINANCIAL_PROFILE, deepMerge(s.financialProfile || {}, updates)) })),
+
+      toggleFinancialMode: () =>
+        set((s) => ({
+          financialProfile: {
+            ...SEED_FINANCIAL_PROFILE,
+            ...(s.financialProfile || {}),
+            mode: (s.financialProfile?.mode || 'simple') === 'simple' ? 'advisor' : 'simple',
+          },
+        })),
+
       // ─── Reset ──────────────────────────────────────────────────────────
       resetAll: () =>
         set({
@@ -112,10 +166,11 @@ export const useFinanceStore = create(
           budgets: SEED_BUDGETS,
           goals: SEED_GOALS,
           userProfile: SEED_USER_PROFILE,
+          financialProfile: SEED_FINANCIAL_PROFILE,
         }),
 
       clearAll: () =>
-        set({ transactions: [], budgets: [], goals: [], userProfile: SEED_USER_PROFILE }),
+        set({ transactions: [], budgets: [], goals: [], userProfile: SEED_USER_PROFILE, financialProfile: SEED_FINANCIAL_PROFILE }),
 
       // ─── Selectors ───────────────────────────────────────────────────────
       // All selectors are functions that read from state
@@ -184,10 +239,14 @@ export const useFinanceStore = create(
     }),
     {
       name: 'finflow-storage',
-      version: 2,
+      version: 3,
       migrate: (persistedState) => ({
         ...persistedState,
         userProfile: { ...SEED_USER_PROFILE, ...(persistedState?.userProfile || {}) },
+        financialProfile: deepMerge(
+          SEED_FINANCIAL_PROFILE,
+          persistedState?.financialProfile || migrateUserProfile(persistedState?.userProfile || {})
+        ),
       }),
     }
   )
