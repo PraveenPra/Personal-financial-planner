@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, Target,
-  BarChart3, Settings, TrendingUp, ChevronLeft, ChevronRight,
+  BarChart3, Settings, HeartPulse, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useUIStore } from '../../store/useUIStore';
 import { useFinanceStore } from '../../store/useFinanceStore';
@@ -9,6 +9,7 @@ import { formatCurrency } from '../../utils/formatters';
 
 const NAV_ITEMS = [
   { to: '/',            icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/health',      icon: HeartPulse,      label: 'Financial Health' },
   { to: '/transactions', icon: ArrowLeftRight,  label: 'Transactions' },
   { to: '/budgets',      icon: Wallet,           label: 'Budgets' },
   { to: '/goals',        icon: Target,           label: 'Goals' },

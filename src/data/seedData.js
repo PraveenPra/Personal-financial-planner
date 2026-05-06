@@ -122,3 +122,12 @@ export const SEED_GOALS = [
     color: '#8b5cf6',
   },
 ];
+
+export const SEED_USER_PROFILE = {
+  hasHealthInsurance: true,
+  hasTermInsurance: false,
+  dependents: 0,
+  monthlyExpenseEstimate: 0,
+  emergencyFundMonths: 3,
+  hasHighInterestDebt: false,
+};

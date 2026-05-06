@@ -9,6 +9,7 @@ import Budgets from './pages/Budgets';
 import Goals from './pages/Goals';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import FinancialHealth from './pages/FinancialHealth';
 import { useUIStore } from './store/useUIStore';
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
         <TopBar />
         <Routes>
           <Route path="/"             element={<Dashboard />} />
+          <Route path="/health"       element={<FinancialHealth />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/budgets"      element={<Budgets />} />
           <Route path="/goals"        element={<Goals />} />

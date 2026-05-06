@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { SEED_TRANSACTIONS, SEED_BUDGETS, SEED_GOALS } from '../data/seedData';
+import { SEED_TRANSACTIONS, SEED_BUDGETS, SEED_GOALS, SEED_USER_PROFILE } from '../data/seedData';
 import { getMonthKey } from '../utils/formatters';
+import { getFinancialHealthSummary } from '../utils/financialHealth';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 let _idCounter = Date.now();
@@ -25,6 +26,7 @@ export const useFinanceStore = create(
         currency: '₹',
         locale: 'en-IN',
       },
+      userProfile: SEED_USER_PROFILE,
 
       // ─── Transaction Actions ─────────────────────────────────────────────
       addTransaction: (tx) =>
@@ -100,16 +102,20 @@ export const useFinanceStore = create(
       updateSettings: (updates) =>
         set((s) => ({ settings: { ...s.settings, ...updates } })),
 
+      updateUserProfile: (updates) =>
+        set((s) => ({ userProfile: { ...SEED_USER_PROFILE, ...s.userProfile, ...updates } })),
+
       // ─── Reset ──────────────────────────────────────────────────────────
       resetAll: () =>
         set({
           transactions: SEED_TRANSACTIONS,
           budgets: SEED_BUDGETS,
           goals: SEED_GOALS,
+          userProfile: SEED_USER_PROFILE,
         }),
 
       clearAll: () =>
-        set({ transactions: [], budgets: [], goals: [] }),
+        set({ transactions: [], budgets: [], goals: [], userProfile: SEED_USER_PROFILE }),
 
       // ─── Selectors ───────────────────────────────────────────────────────
       // All selectors are functions that read from state
@@ -173,10 +179,16 @@ export const useFinanceStore = create(
           return { month: mk, label, income, expenses, savings: income - expenses };
         });
       },
+
+      getFinancialHealth: () => getFinancialHealthSummary(get()),
     }),
     {
       name: 'finflow-storage',
-      version: 1,
+      version: 2,
+      migrate: (persistedState) => ({
+        ...persistedState,
+        userProfile: { ...SEED_USER_PROFILE, ...(persistedState?.userProfile || {}) },
+      }),
     }
   )
 );
