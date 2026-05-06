@@ -108,6 +108,8 @@ const findEmergencyGoal = (goals) =>
     return haystack.includes('emergency') || haystack.includes('savings') || haystack.includes('rainy');
   });
 
+const todayISO = () => new Date().toISOString().split('T')[0];
+
 const evaluateBudgets = (transactions, budgets) => {
   if (!budgets.length) {
     return { score: 0, overspent: [], activeCount: 0, underLimitCount: 0 };
@@ -384,6 +386,12 @@ export const getFinancialHealthSummary = (state = {}) => {
       ? 'Growth suggestions are intentionally deprioritized because protection is weak.'
       : 'Protection is strong enough for controlled growth planning.',
   ];
+  const warnings = [
+    ...(emergencyPercent < 50 ? ['Not recommended to invest yet - emergency fund is below 50%.'] : []),
+    ...(!profile.hasHealthInsurance ? ['Growth plans are fragile until health insurance is in place.'] : []),
+    ...(Number(profile.dependents) > 0 && !profile.hasTermInsurance ? ['Dependents are exposed until term insurance is in place.'] : []),
+    ...(profile.hasHighInterestDebt ? ['Pay high-interest debt before adding new growth commitments.'] : []),
+  ];
 
   return {
     score: clamp(score),
@@ -392,6 +400,7 @@ export const getFinancialHealthSummary = (state = {}) => {
     priorities,
     layers,
     insights,
+    warnings,
     nextActions,
     metrics: {
       income: currentSummary.income,
@@ -405,6 +414,144 @@ export const getFinancialHealthSummary = (state = {}) => {
       emergencyMonths,
       protectionWeak,
     },
+  };
+};
+
+const cloneStateForSimulation = (state = {}) => ({
+  ...state,
+  transactions: Array.isArray(state.transactions) ? state.transactions.map((tx) => ({ ...tx })) : [],
+  budgets: Array.isArray(state.budgets) ? state.budgets.map((budget) => ({ ...budget })) : [],
+  goals: Array.isArray(state.goals) ? state.goals.map((goal) => ({ ...goal })) : [],
+  userProfile: { ...(state.userProfile || {}) },
+});
+
+const reduceCurrentMonthExpense = (transactions, category, amount) => {
+  let remaining = Math.max(0, Number(amount) || 0);
+  const currentMonth = monthKeyOffset(0);
+  return transactions.map((tx) => {
+    if (remaining <= 0 || tx.type !== 'expense' || tx.category !== category || getMonthKey(tx.date) !== currentMonth) {
+      return tx;
+    }
+    const reduction = Math.min(Number(tx.amount) || 0, remaining);
+    remaining -= reduction;
+    return { ...tx, amount: Math.max(0, (Number(tx.amount) || 0) - reduction) };
+  });
+};
+
+export const simulateFinancialChange = (state = {}, scenario = {}) => {
+  const baseSummary = getFinancialHealthSummary(state);
+  const simulatedState = cloneStateForSimulation(state);
+  const emergencyGoal = findEmergencyGoal(simulatedState.goals);
+
+  if ((Number(scenario.addSavings) || 0) > 0) {
+    if (emergencyGoal) {
+      emergencyGoal.saved = Math.min(
+        Math.max(Number(emergencyGoal.target) || 0, Number(baseSummary.metrics?.emergencyTarget) || 0),
+        (Number(emergencyGoal.saved) || 0) + Number(scenario.addSavings)
+      );
+    } else {
+      simulatedState.goals.push({
+        id: `scenario-emergency-${Date.now()}`,
+        name: 'Emergency Fund',
+        icon: 'savings',
+        target: Number(baseSummary.metrics?.emergencyTarget) || Number(scenario.addSavings),
+        saved: Number(scenario.addSavings),
+        deadline: todayISO(),
+        color: '#f59e0b',
+      });
+    }
+  }
+
+  if (scenario.reduceExpense?.category && (Number(scenario.reduceExpense.amount) || 0) > 0) {
+    simulatedState.transactions = reduceCurrentMonthExpense(
+      simulatedState.transactions,
+      scenario.reduceExpense.category,
+      Number(scenario.reduceExpense.amount)
+    );
+  }
+
+  if ((Number(scenario.increaseIncome) || 0) > 0) {
+    simulatedState.transactions.unshift({
+      id: `scenario-income-${Date.now()}`,
+      type: 'income',
+      category: 'other_inc',
+      amount: Number(scenario.increaseIncome),
+      note: 'Scenario income increase',
+      date: todayISO(),
+    });
+  }
+
+  if ((Number(scenario.addInvestment) || 0) > 0) {
+    simulatedState.transactions.unshift({
+      id: `scenario-investment-${Date.now()}`,
+      type: 'expense',
+      category: 'investment',
+      amount: Number(scenario.addInvestment),
+      note: 'Scenario SIP investment',
+      date: todayISO(),
+    });
+  }
+
+  const newSummary = getFinancialHealthSummary(simulatedState);
+  const stageChange = (newSummary.stage?.id ?? 0) - (baseSummary.stage?.id ?? 0);
+
+  return {
+    newScore: newSummary.score,
+    newStage: newSummary.stage,
+    newActions: newSummary.nextActions,
+    warnings: newSummary.warnings,
+    summary: newSummary,
+    deltas: {
+      scoreChange: Math.round((newSummary.score || 0) - (baseSummary.score || 0)),
+      stageChange,
+    },
+  };
+};
+
+export const getExplanation = (type = 'general', context = {}) => {
+  const safeType = typeof type === 'string' && type ? type : 'general';
+  const explanations = {
+    emergency_fund: {
+      why: 'An emergency fund is money set aside for surprises like job loss, repairs, or medical costs.',
+      ignored: 'Without it, even a small unexpected expense can force you into debt and delay every other goal.',
+    },
+    health_insurance: {
+      why: 'Health insurance protects your savings from large medical bills.',
+      ignored: 'If ignored, one hospital bill can wipe out months or years of savings.',
+    },
+    term_insurance: {
+      why: 'Term insurance protects people who depend on your income.',
+      ignored: 'If ignored, your family may struggle financially if your income suddenly stops.',
+    },
+    savings_rate: {
+      why: 'Savings rate shows how much of your income is left after expenses.',
+      ignored: 'If it stays low, goals may look active but grow too slowly to matter.',
+    },
+    high_interest_debt: {
+      why: 'High-interest debt grows faster than most normal investments.',
+      ignored: 'If ignored, interest payments can consume money that should go toward savings and goals.',
+    },
+    budget_adherence: {
+      why: 'Budgets show whether spending matches the plan you set for yourself.',
+      ignored: 'If ignored, small overspending patterns can quietly remove your monthly surplus.',
+    },
+    investing: {
+      why: 'Investing helps grow money over time after the foundation is secure.',
+      ignored: context.protectionWeak
+        ? 'Investing too early can create risk because you may need to sell investments during an emergency.'
+        : 'If ignored for too long, long-term wealth building may start later than it needs to.',
+    },
+  };
+
+  const selected = explanations[safeType] || {
+    why: 'This factor affects how stable and flexible your financial plan is.',
+    ignored: 'If ignored, it can make other goals harder to reach.',
+  };
+
+  return {
+    title: safeType.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' '),
+    why: selected.why,
+    ignored: selected.ignored,
   };
 };
 
